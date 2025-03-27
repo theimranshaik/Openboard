@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Board Tool</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #fff;
+            min-height: 100vh;
+            touch-action: none;
+        }
+
+        .container {
+            height: 90vh;
+            padding: 20px;
+            position: relative;
+            overflow: auto;
+            background-color: #fff;
+        }
+
+        .title-input {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            padding: 8px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            width: 200px;
+            z-index: 1000;
+        }
+
+        .button-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+        }
+
+        .add-button, .save-button {
+            width: 60px;
+            height: 40px;
+            border: none;
+            background-color: #f0f0f0;
+            border-radius: 20px;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .save-button {
+            display: none;
+        }
+
+        .bin-button, .undo-button {
+            position: fixed;
+            bottom: 20px;
+            width: 40px;
+            height: 40px;
+            border: none;
+            background-color: #ff4444;
+            border-radius: 50%;
+            font-size: 24px;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .bin-button {
+            right: 20px;
+        }
+
+        .undo-button {
+            right: 70px;
+            background-color: #666;
+        }
+
+        .bin-button.active {
+            background-color: #ff8888;
+        }
+
+        .undo-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .image-container, .text-container {
+            position: absolute;
+            cursor: move;
+            user-select: none;
+            z-index: 10;
+        }
+
+        .image-container.selected, .text-container.selected {
+            border: 2px dashed #ff4444;
+        }
+
+        .image-item {
+            max-width: 300px;
+            border-radius: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            pointer-events: none;
+        }
+
+        .text-item {
+            min-width: 150px;
+            padding: 10px;
+            background-color: #fff;
+            border-radius: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border: 1px solid #ddd;
+            pointer-events: none;
+        }
+
+        .info-text {
+            position: fixed;
+            bottom: 10px;
+            left: 20px;
+            right: 120px;
+            color: rgba(0, 0, 0, 0.3);
+            font-size: 14px;
+            z-index: 1000;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .image-item {
+                max-width: 200px;
+            }
+            
+            .add-button, .save-button {
+                width: 50px;
+                height: 30px;
+                font-size: 16px;
+            }
+
+            .bin-button, .undo-button {
+                width: 35px;
+                height: 35px;
+                font-size: 20px;
+            }
+            
+            .info-text {
+                font-size: 12px;
+            }
+
+            .title-input {
+                width: 150px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <input type="text" class="title-input" placeholder="Board Title">
+    <div class="container">
+        <input type="file" id="imageInput" accept="image/*" style="display: none;">
+        <div class="button-container">
+            <button class="save-button material-icons" title="Save Board">save</button>
+            <button class="add-button">+</button>
+        </div>
+        <button class="bin-button material-icons" title="Delete Mode">delete</button>
+        <button class="undo-button material-icons" title="Undo Delete" disabled>undo</button>
+        <div class="info-text">
+            Tap '+' to add images | Double-tap board to add text | Drag to move | Pinch or scroll to zoom | Tap bin then item to delete | Tap undo to revert | Tap 'Save' to download board
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script>
+        const container = document.querySelector('.container');
+        const addButton = document.querySelector('.add-button');
+        const saveButton = document.querySelector('.save-button');
+        const binButton = document.querySelector('.bin-button');
+        const undoButton = document.querySelector('.undo-button');
+        const imageInput = document.getElementById('imageInput');
+        const titleInput = document.querySelector('.title-input');
+        let items = [];
+        let undoStack = [];
+        let deleteMode = false;
+        let dragItem = null;
+
+        // Add image functionality with high quality
+        addButton.addEventListener('click', () => imageInput.click());
+
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const containerDiv = document.createElement('div');
+                    containerDiv.className = 'image-container';
+                    containerDiv.style.left = '50px';
+                    containerDiv.style.top = '50px';
+                    
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        const maxSize = 300;
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > height) {
+                            if (width > maxSize) {
+                                height *= maxSize / width;
+                                width = maxSize;
+                            }
+                        } else {
+                            if (height > maxSize) {
+                                width *= maxSize / height;
+                                height = maxSize;
+                            }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        const resizedImg = new Image();
+                        resizedImg.src = canvas.toDataURL('image/png'); // PNG for high quality
+                        resizedImg.className = 'image-item';
+                        
+                        containerDiv.appendChild(resizedImg);
+                        container.appendChild(containerDiv);
+
+                        const itemObj = {
+                            element: containerDiv,
+                            content: resizedImg,
+                            x: 50,
+                            y: 50,
+                            scale: 1,
+                            type: 'image'
+                        };
+                        
+                        items.push(itemObj);
+                        makeDraggable(containerDiv, itemObj);
+                        addZoomListener(containerDiv, itemObj);
+                        addDeleteListener(containerDiv, itemObj);
+                        
+                        if (items.length === 1) {
+                            saveButton.style.display = 'flex';
+                        }
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Double-tap to add text
+        container.addEventListener('touchstart', (e) => {
+            if (e.target !== container) return;
+            const currentTime = new Date().getTime();
+            const lastTap = container.lastTap || 0;
+            if (currentTime - lastTap < 300 && currentTime - lastTap > 0) {
+                addTextBox(e.touches[0].clientX, e.touches[0].clientY);
+            }
+            container.lastTap = currentTime;
+        });
+
+        container.addEventListener('dblclick', (e) => {
+            if (e.target !== container) return;
+            addTextBox(e.clientX, e.clientY);
+        });
+
+        function addTextBox(x, y) {
+            const containerDiv = document.createElement('div');
+            containerDiv.className = 'text-container';
+            containerDiv.style.left = (x - 75) + 'px';
+            containerDiv.style.top = (y - 20) + 'px';
+            
+            const text = document.createElement('div');
+            text.className = 'text-item';
+            text.contentEditable = true;
+            text.textContent = 'Enter text here';
+            
+            containerDiv.appendChild(text);
+            container.appendChild(containerDiv);
+
+            const itemObj = {
+                element: containerDiv,
+                content: text,
+                x: x - 75,
+                y: y - 20,
+                scale: 1,
+                type: 'text'
+            };
+            
+            items.push(itemObj);
+            makeDraggable(containerDiv, itemObj);
+            addZoomListener(containerDiv, itemObj);
+            addDeleteListener(containerDiv, itemObj);
+            
+            if (items.length === 1) {
+                saveButton.style.display = 'flex';
+            }
+        }
+
+        // Drag functionality
+        function makeDraggable(element, itemObj) {
+            element.addEventListener('mousedown', startDragging);
+            element.addEventListener('touchstart', startDragging, { passive: false });
+
+            function startDragging(e) {
+                if (deleteMode) return;
+                e.preventDefault();
+                const touch = e.type === 'touchstart' ? e.touches[0] : e;
+                dragItem = {
+                    obj: itemObj,
+                    offsetX: touch.clientX - itemObj.x,
+                    offsetY: touch.clientY - itemObj.y
+                };
+
+                element.style.zIndex = Math.max(...items.map(item => parseInt(item.element.style.zIndex) || 10)) + 1;
+
+                document.addEventListener('mousemove', drag);
+                document.addEventListener('mouseup', stopDragging);
+                document.addEventListener('touchmove', drag, { passive: false });
+                document.addEventListener('touchend', stopDragging);
+            }
+
+            function drag(e) {
+                if (!dragItem || deleteMode) return;
+                e.preventDefault();
+                const touch = e.type === 'touchmove' ? e.touches[0] : e;
+                dragItem.obj.x = touch.clientX - dragItem.offsetX;
+                dragItem.obj.y = touch.clientY - dragItem.offsetY;
+                dragItem.obj.element.style.left = dragItem.obj.x + 'px';
+                dragItem.obj.element.style.top = dragItem.obj.y + 'px';
+            }
+
+            function stopDragging() {
+                dragItem = null;
+                document.removeEventListener('mousemove', drag);
+                document.removeEventListener('mouseup', stopDragging);
+                document.removeEventListener('touchmove', drag);
+                document.removeEventListener('touchend', stopDragging);
+            }
+        }
+
+        // Zoom functionality
+        function addZoomListener(element, itemObj) {
+            let initialDistance = null;
+            let initialScale = itemObj.scale;
+
+            element.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const scaleChange = e.deltaY > 0 ? -0.1 : 0.1;
+                itemObj.scale = Math.max(0.3, Math.min(3, itemObj.scale + scaleChange));
+                itemObj.content.style.transform = `scale(${itemObj.scale})`;
+            });
+
+            element.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 2) {
+                    e.preventDefault();
+                    initialDistance = getDistance(e.touches[0], e.touches[1]);
+                    initialScale = itemObj.scale;
+                }
+            }, { passive: false });
+
+            element.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 2 && initialDistance) {
+                    e.preventDefault();
+                    const currentDistance = getDistance(e.touches[0], e.touches[1]);
+                    itemObj.scale = Math.max(0.3, Math.min(3, initialScale * (currentDistance / initialDistance)));
+                    itemObj.content.style.transform = `scale(${itemObj.scale})`;
+                }
+            }, { passive: false });
+
+            element.addEventListener('touchend', () => {
+                initialDistance = null;
+            });
+        }
+
+        // Delete functionality
+        binButton.addEventListener('click', () => {
+            deleteMode = !deleteMode;
+            binButton.classList.toggle('active', deleteMode);
+            items.forEach(item => item.element.classList.toggle('selected', deleteMode));
+        });
+
+        function addDeleteListener(element, itemObj) {
+            element.addEventListener('touchstart', (e) => {
+                if (deleteMode) {
+                    e.preventDefault();
+                    deleteItem(itemObj);
+                }
+            }, { passive: false });
+
+            element.addEventListener('click', (e) => {
+                if (deleteMode) {
+                    e.preventDefault();
+                    deleteItem(itemObj);
+                }
+            });
+        }
+
+        function deleteItem(itemObj) {
+            if (confirm('Delete this item?')) {
+                container.removeChild(itemObj.element);
+                undoStack.push(itemObj);
+                items = items.filter(item => item !== itemObj);
+                undoButton.disabled = false;
+                if (items.length === 0) {
+                    saveButton.style.display = 'none';
+                }
+                deleteMode = false;
+                binButton.classList.remove('active');
+                items.forEach(item => item.element.classList.remove('selected'));
+            }
+        }
+
+        // Undo functionality
+        undoButton.addEventListener('click', () => {
+            if (undoStack.length > 0) {
+                const lastItem = undoStack.pop();
+                container.appendChild(lastItem.element);
+                items.push(lastItem);
+                makeDraggable(lastItem.element, lastItem);
+                addZoomListener(lastItem.element, lastItem);
+                addDeleteListener(lastItem.element, lastItem);
+                saveButton.style.display = 'flex';
+                if (undoStack.length === 0) {
+                    undoButton.disabled = true;
+                }
+            }
+        });
+
+        function getDistance(touch1, touch2) {
+            return Math.sqrt(
+                Math.pow(touch2.clientX - touch1.clientX, 2) +
+                Math.pow(touch2.clientY - touch1.clientY, 2)
+            );
+        }
+
+        // Download functionality
+        saveButton.addEventListener('click', () => {
+            const buttonContainer = document.querySelector('.button-container');
+            const infoText = document.querySelector('.info-text');
+            const binElement = document.querySelector('.bin-button');
+            const undoElement = document.querySelector('.undo-button');
+            const titleElement = document.querySelector('.title-input');
+            buttonContainer.style.display = 'none';
+            infoText.style.display = 'none';
+            binElement.style.display = 'none';
+            undoElement.style.display = 'none';
+            titleElement.style.display = 'none';
+
+            const fullContainer = document.createElement('div');
+            fullContainer.style.backgroundColor = '#ffffff';
+            const maxX = Math.max(...items.map(item => item.x + (item.scale * 300)), 300) + 20;
+            const maxY = Math.max(...items.map(item => item.y + (item.scale * 300)), 300) + 20;
+            fullContainer.style.width = `${maxX}px`;
+            fullContainer.style.height = `${maxY + 60}px`; // Space for title
+            fullContainer.style.position = 'relative';
+
+            // Title with rounded border
+            const titleDiv = document.createElement('div');
+            titleDiv.style.position = 'absolute';
+            titleDiv.style.top = '10px';
+            titleDiv.style.left = '20px';
+            titleDiv.style.padding = '8px';
+            titleDiv.style.fontSize = '16px';
+            titleDiv.style.backgroundColor = '#f0f0f0';
+            titleDiv.style.borderRadius = '20px';
+            titleDiv.style.zIndex = '1000';
+            titleDiv.textContent = titleInput.value || 'Untitled Board';
+
+            const contentDiv = container.cloneNode(true);
+            contentDiv.style.position = 'relative';
+            contentDiv.style.padding = '20px';
+            contentDiv.style.top = '60px'; // Offset for title
+
+            fullContainer.appendChild(titleDiv);
+            fullContainer.appendChild(contentDiv);
+            document.body.appendChild(fullContainer);
+
+            html2canvas(fullContainer, {
+                backgroundColor: '#ffffff',
+                useCORS: true,
+                scale: 2,
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = `${titleInput.value || 'image-board'}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                
+                document.body.removeChild(fullContainer);
+                buttonContainer.style.display = 'flex';
+                infoText.style.display = 'block';
+                binElement.style.display = 'flex';
+                undoElement.style.display = 'flex';
+                titleElement.style.display = 'block';
+            }).catch(err => {
+                console.error('Download failed:', err);
+                alert('Failed to download. Please try again.');
+                document.body.removeChild(fullContainer);
+                buttonContainer.style.display = 'flex';
+                infoText.style.display = 'block';
+                binElement.style.display = 'flex';
+                undoElement.style.display = 'flex';
+                titleElement.style.display = 'block';
+            });
+        });
+    </script>
+</body>
+</html>
