@@ -96,14 +96,14 @@
             cursor: not-allowed;
         }
 
-        .image-container, .text-container {
+        .image-container {
             position: absolute;
             cursor: move;
             user-select: none;
             z-index: 10;
         }
 
-        .image-container.selected, .text-container.selected {
+        .image-container.selected {
             border: 2px dashed #ff4444;
         }
 
@@ -111,16 +111,6 @@
             max-width: 300px;
             border-radius: 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            pointer-events: none;
-        }
-
-        .text-item {
-            min-width: 150px;
-            padding: 10px;
-            background-color: #fff;
-            border-radius: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            border: 1px solid #ddd;
             pointer-events: none;
         }
 
@@ -173,7 +163,7 @@
         <button class="bin-button material-icons" title="Delete Mode">delete</button>
         <button class="undo-button material-icons" title="Undo Delete" disabled>undo</button>
         <div class="info-text">
-            Tap '+' to add images | Double-tap board to add text | Drag to move | Pinch or scroll to zoom | Tap bin then item to delete | Tap undo to revert | Tap 'Save' to download board
+            Tap '+' to add images | Drag to move | Pinch or scroll to zoom | Tap bin then image to delete | Tap undo to revert | Tap 'Save' to download board
         </div>
     </div>
 
@@ -229,7 +219,7 @@
                         ctx.drawImage(img, 0, 0, width, height);
                         
                         const resizedImg = new Image();
-                        resizedImg.src = canvas.toDataURL('image/png'); // PNG for high quality
+                        resizedImg.src = canvas.toDataURL('image/png');
                         resizedImg.className = 'image-item';
                         
                         containerDiv.appendChild(resizedImg);
@@ -240,8 +230,7 @@
                             content: resizedImg,
                             x: 50,
                             y: 50,
-                            scale: 1,
-                            type: 'image'
+                            scale: 1
                         };
                         
                         items.push(itemObj);
@@ -258,55 +247,6 @@
                 reader.readAsDataURL(file);
             }
         });
-
-        // Double-tap to add text
-        container.addEventListener('touchstart', (e) => {
-            if (e.target !== container) return;
-            const currentTime = new Date().getTime();
-            const lastTap = container.lastTap || 0;
-            if (currentTime - lastTap < 300 && currentTime - lastTap > 0) {
-                addTextBox(e.touches[0].clientX, e.touches[0].clientY);
-            }
-            container.lastTap = currentTime;
-        });
-
-        container.addEventListener('dblclick', (e) => {
-            if (e.target !== container) return;
-            addTextBox(e.clientX, e.clientY);
-        });
-
-        function addTextBox(x, y) {
-            const containerDiv = document.createElement('div');
-            containerDiv.className = 'text-container';
-            containerDiv.style.left = (x - 75) + 'px';
-            containerDiv.style.top = (y - 20) + 'px';
-            
-            const text = document.createElement('div');
-            text.className = 'text-item';
-            text.contentEditable = true;
-            text.textContent = 'Enter text here';
-            
-            containerDiv.appendChild(text);
-            container.appendChild(containerDiv);
-
-            const itemObj = {
-                element: containerDiv,
-                content: text,
-                x: x - 75,
-                y: y - 20,
-                scale: 1,
-                type: 'text'
-            };
-            
-            items.push(itemObj);
-            makeDraggable(containerDiv, itemObj);
-            addZoomListener(containerDiv, itemObj);
-            addDeleteListener(containerDiv, itemObj);
-            
-            if (items.length === 1) {
-                saveButton.style.display = 'flex';
-            }
-        }
 
         // Drag functionality
         function makeDraggable(element, itemObj) {
@@ -463,7 +403,7 @@
             const maxX = Math.max(...items.map(item => item.x + (item.scale * 300)), 300) + 20;
             const maxY = Math.max(...items.map(item => item.y + (item.scale * 300)), 300) + 20;
             fullContainer.style.width = `${maxX}px`;
-            fullContainer.style.height = `${maxY + 60}px`; // Space for title
+            fullContainer.style.height = `${maxY + 60}px`;
             fullContainer.style.position = 'relative';
 
             // Title with rounded border
@@ -471,7 +411,7 @@
             titleDiv.style.position = 'absolute';
             titleDiv.style.top = '10px';
             titleDiv.style.left = '20px';
-            titleDiv.style.padding = '8px';
+            titleDiv.style.padding = '8px 16px';
             titleDiv.style.fontSize = '16px';
             titleDiv.style.backgroundColor = '#f0f0f0';
             titleDiv.style.borderRadius = '20px';
@@ -481,7 +421,7 @@
             const contentDiv = container.cloneNode(true);
             contentDiv.style.position = 'relative';
             contentDiv.style.padding = '20px';
-            contentDiv.style.top = '60px'; // Offset for title
+            contentDiv.style.top = '60px';
 
             fullContainer.appendChild(titleDiv);
             fullContainer.appendChild(contentDiv);
@@ -491,28 +431,28 @@
                 backgroundColor: '#ffffff',
                 useCORS: true,
                 scale: 2,
+                logging: false // Disable logging for cleaner console
             }).then(canvas => {
                 const link = document.createElement('a');
                 link.download = `${titleInput.value || 'image-board'}.png`;
                 link.href = canvas.toDataURL('image/png');
                 link.click();
                 
-                document.body.removeChild(fullContainer);
-                buttonContainer.style.display = 'flex';
-                infoText.style.display = 'block';
-                binElement.style.display = 'flex';
-                undoElement.style.display = 'flex';
-                titleElement.style.display = 'block';
+                cleanupAfterSave(fullContainer);
             }).catch(err => {
                 console.error('Download failed:', err);
                 alert('Failed to download. Please try again.');
-                document.body.removeChild(fullContainer);
+                cleanupAfterSave(fullContainer);
+            });
+
+            function cleanupAfterSave(tempContainer) {
+                document.body.removeChild(tempContainer);
                 buttonContainer.style.display = 'flex';
                 infoText.style.display = 'block';
                 binElement.style.display = 'flex';
                 undoElement.style.display = 'flex';
                 titleElement.style.display = 'block';
-            });
+            }
         });
     </script>
 </body>
